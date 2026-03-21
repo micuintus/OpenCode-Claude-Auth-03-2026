@@ -1,0 +1,41 @@
+{
+  "name": "opencode-claude-patch",
+  "version": "1.0.0",
+  "description": "Drop-in Claude/Anthropic auth plugin for OpenCode — use your Claude Pro/Max subscription via OAuth",
+  "main": "./index.mjs",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GukDev/OpenCode-Claude-Auth-03-2026.git"
+  },
+  "bugs": {
+    "url": "https://github.com/GukDev/OpenCode-Claude-Auth-03-2026/issues"
+  },
+  "homepage": "https://github.com/GukDev/OpenCode-Claude-Auth-03-2026#readme",
+  "keywords": [
+    "opencode",
+    "claude",
+    "anthropic",
+    "oauth",
+    "plugin",
+    "claude-code",
+    "ai",
+    "llm"
+  ],
+  "files": [
+    "index.mjs",
+    "install.sh",
+    "bin/"
+  ],
+  "scripts": {
+    "install-patch": "bash install.sh",
+    "postinstall": "node -e \"console.log('\\n  opencode-claude-patch installed.\\n  Run: npx opencode-claude-patch\\n  Or:  bash node_modules/opencode-claude-patch/install.sh\\n')\""
+  },
+  "bin": {
+    "opencode-claude-patch": "./bin/install.mjs"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^0.4.45"
+  }
+}
