@@ -2,6 +2,8 @@
 
 Use your **Claude Pro/Max subscription** in [OpenCode](https://opencode.ai) via OAuth. Drop-in replacement for the discontinued `opencode-anthropic-auth` plugin.
 
+> **Important:** This is a _patch_, not a standalone plugin. Do **not** add `opencode-claude-patch` to your `opencode.json` plugin list — it won't work that way. OpenCode hardcodes `opencode-anthropic-auth` as the Anthropic provider. This package patches that existing plugin in-place with a working implementation. See [How it works](#how-it-works) for details.
+
 ## Quick Start
 
 ### Option 1: npx (recommended)
@@ -12,7 +14,7 @@ npx opencode-claude-patch
 
 Then open OpenCode and connect the Anthropic provider.
 
-### Option 2: If you have Claude Code authenticated
+### Option 2: If you have Claude Code authenticated (fastest)
 
 Skip the OAuth flow entirely by copying your existing Claude Code tokens:
 
@@ -21,18 +23,20 @@ npx opencode-claude-patch
 bash node_modules/opencode-claude-patch/install.sh --seed
 ```
 
+This copies your active Claude Code OAuth tokens straight into OpenCode — no browser auth needed.
+
 ### Option 3: Clone and install manually
 
 ```bash
 git clone https://github.com/GukDev/OpenCode-Claude-Auth-03-2026.git
-cd opencode-claude-patch
+cd OpenCode-Claude-Auth-03-2026
 bash install.sh          # Install the patch
 bash install.sh --seed   # (Optional) Copy tokens from Claude Code
 ```
 
 ## What this does
 
-OpenCode uses `opencode-anthropic-auth` to connect to Claude's API. That plugin is no longer maintained and uses outdated OAuth endpoints (`console.anthropic.com` instead of the current `platform.claude.com`).
+OpenCode uses a plugin called `opencode-anthropic-auth` to connect to Claude's API. That plugin is no longer maintained and uses outdated OAuth endpoints (`console.anthropic.com` instead of the current `platform.claude.com`), which causes authentication to fail.
 
 This patch replaces it with a working implementation that:
 
@@ -50,23 +54,36 @@ This patch replaces it with a working implementation that:
 
 ## How it works
 
-The patch replaces the `index.mjs` inside `~/.cache/opencode/node_modules/opencode-anthropic-auth/` with our implementation. OpenCode loads it as if it were the original plugin — no config changes needed.
+OpenCode hardcodes `opencode-anthropic-auth` as its Anthropic provider plugin. It always loads it from:
+
+```
+~/.cache/opencode/node_modules/opencode-anthropic-auth/index.mjs
+```
+
+**This package patches that file in-place.** When you run `npx opencode-claude-patch`, it copies our updated `index.mjs` over the old one. OpenCode then loads our code as if it were the original plugin — no config changes needed.
+
+**This means:**
+- You do NOT add this to your `opencode.json` plugin list
+- You do NOT need to change any OpenCode configuration
+- You just run `npx opencode-claude-patch` and it works
+- After OpenCode updates, re-run `npx opencode-claude-patch` to re-apply
 
 ### For AI agents / Claude Code
 
-If you're an AI agent helping a user set up this patch, here's what to do:
+If you're an AI agent (Claude Code, Cursor, etc.) helping a user get Claude working in OpenCode, here's the full procedure:
 
 ```bash
-# 1. Install the patch
+# 1. Install the patch (replaces the broken opencode-anthropic-auth plugin)
 npx opencode-claude-patch
 
-# 2. (Fastest) Seed tokens from Claude Code if already authenticated
+# 2. (Fastest) If the user has Claude Code already authenticated,
+#    seed tokens directly — no OAuth browser flow needed:
 #    This copies active OAuth tokens from ~/.claude/.credentials.json
-#    into ~/.local/share/opencode/auth.json — no OAuth flow needed
+#    into ~/.local/share/opencode/auth.json
 bash install.sh --seed
 
 # 3. (Alternative) If Claude Code isn't available, the user needs to
-#    authenticate in OpenCode:
+#    authenticate manually in OpenCode:
 #    - Open OpenCode
 #    - Go to provider settings → Anthropic → Connect
 #    - Choose "Claude Pro/Max (OAuth)"
@@ -75,7 +92,8 @@ bash install.sh --seed
 ```
 
 **Troubleshooting token refresh 429 errors:**
-If the user gets rate-limited on the OAuth token endpoint, the fastest fix is to copy tokens from Claude Code rather than waiting for the rate limit to clear:
+
+If the user gets rate-limited on the OAuth token endpoint (often from repeated failed auth attempts), the fastest fix is to copy tokens from Claude Code rather than waiting for the rate limit to clear:
 
 ```bash
 bash install.sh --seed
@@ -101,13 +119,14 @@ bash install.sh
 
 | File | Purpose |
 |------|---------|
-| `~/.cache/opencode/node_modules/opencode-anthropic-auth/index.mjs` | The patched plugin (installed here) |
+| `~/.cache/opencode/node_modules/opencode-anthropic-auth/index.mjs` | Where the patch is installed (replaces original) |
 | `~/.local/share/opencode/auth.json` | OpenCode's stored OAuth tokens |
 | `~/.claude/.credentials.json` | Claude Code's OAuth tokens (used by `--seed`) |
+| `~/.config/opencode/opencode.json` | OpenCode config (you do NOT need to edit this) |
 
 ## Auth methods
 
-The plugin provides three authentication methods in OpenCode's provider setup:
+Once patched, the Anthropic provider in OpenCode offers three authentication methods:
 
 1. **Claude Pro/Max (OAuth)** — Authorize via `claude.ai`, uses your subscription
 2. **Create an API Key (via Console OAuth)** — Creates an API key through Anthropic's console
