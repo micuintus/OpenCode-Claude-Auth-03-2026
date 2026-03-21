@@ -1,4 +1,4 @@
-# opencode-claude-patch
+# OpenCode Claude Patch
 
 Use your **Claude Pro/Max subscription** in [OpenCode](https://opencode.ai) via OAuth. Drop-in replacement for the discontinued `opencode-anthropic-auth` plugin.
 
