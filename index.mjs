@@ -228,20 +228,71 @@ function createToolNameUnprefixStream(response) {
   });
 }
 
-// ─── Token refresh with deduplication + retry ───────────────────────────────────
+// ─── Token refresh with Claude Code sync + API fallback ─────────────────────────
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 let _refreshPromise = null;
 
 /**
- * Refresh the OAuth token with retry on 429. Only one refresh runs at a time —
- * concurrent callers share the same promise.
+ * Try to read fresh tokens from Claude Code's credentials file.
+ * Claude Code handles its own token refresh, so we piggyback off it.
+ * Returns the access token if found and valid, null otherwise.
+ */
+function readClaudeCodeTokens() {
+  try {
+    const credsPath = join(homedir(), ".claude", ".credentials.json");
+    const raw = readFileSync(credsPath, "utf8");
+    const creds = JSON.parse(raw);
+    const oauth = creds.claudeAiOauth;
+    if (
+      oauth &&
+      oauth.accessToken &&
+      oauth.refreshToken &&
+      oauth.expiresAt > Date.now() + 60000 // at least 1 min remaining
+    ) {
+      return {
+        access: oauth.accessToken,
+        refresh: oauth.refreshToken,
+        expires: oauth.expiresAt,
+      };
+    }
+  } catch {
+    // Claude Code not installed or credentials not found — that's fine
+  }
+  return null;
+}
+
+/**
+ * Refresh the OAuth token. Strategy:
+ *  1. Read fresh tokens from Claude Code (instant, no API call)
+ *  2. Fall back to Anthropic's token endpoint with retry on 429
+ *
+ * Only one refresh runs at a time — concurrent callers share the same promise.
  */
 async function refreshToken(currentAuth, client) {
   if (_refreshPromise) return _refreshPromise;
 
   _refreshPromise = (async () => {
+    // ── Strategy 1: Read from Claude Code ─────────────────────────────
+    const ccTokens = readClaudeCodeTokens();
+    if (ccTokens) {
+      await client.auth.set({
+        path: { id: "anthropic" },
+        body: {
+          type: "oauth",
+          refresh: ccTokens.refresh,
+          access: ccTokens.access,
+          expires: ccTokens.expires,
+        },
+      });
+      return ccTokens.access;
+    }
+
+    // ── Strategy 2: Refresh via Anthropic API ─────────────────────────
     const MAX_RETRIES = 5;
-    // Start at 5s, then 15s, 30s, 60s, 120s — avoids hammering the endpoint
     const BACKOFF_MS = [5000, 15000, 30000, 60000, 120000];
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -256,6 +307,22 @@ async function refreshToken(currentAuth, client) {
       });
 
       if (response.status === 429) {
+        // Before retrying the API, check Claude Code again — it may
+        // have refreshed in the meantime
+        const retryCC = readClaudeCodeTokens();
+        if (retryCC) {
+          await client.auth.set({
+            path: { id: "anthropic" },
+            body: {
+              type: "oauth",
+              refresh: retryCC.refresh,
+              access: retryCC.access,
+              expires: retryCC.expires,
+            },
+          });
+          return retryCC.access;
+        }
+
         const retryAfter = response.headers.get("retry-after");
         const waitMs = retryAfter
           ? parseInt(retryAfter, 10) * 1000
@@ -269,7 +336,8 @@ async function refreshToken(currentAuth, client) {
 
       if (!response.ok) {
         throw new Error(
-          `Claude OAuth token refresh failed: ${response.status}. You may need to re-authenticate in OpenCode (disconnect & reconnect Anthropic provider).`,
+          `Claude OAuth token refresh failed: ${response.status}. ` +
+            "Ensure Claude Code is authenticated, or disconnect & reconnect the Anthropic provider in OpenCode.",
         );
       }
 
@@ -288,8 +356,9 @@ async function refreshToken(currentAuth, client) {
     }
 
     throw new Error(
-      "Claude OAuth token refresh failed — rate limited by Anthropic. " +
-        "Please wait a few minutes and try again, or disconnect & reconnect the Anthropic provider in OpenCode to get fresh tokens.",
+      "Claude OAuth token refresh failed. " +
+        "If you have Claude Code installed, make sure it's authenticated. " +
+        "Otherwise, disconnect & reconnect the Anthropic provider in OpenCode.",
     );
   })();
 
