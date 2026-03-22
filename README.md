@@ -6,32 +6,43 @@ Use your **Claude Pro/Max subscription** in [OpenCode](https://opencode.ai) via 
 
 ## Quick Start
 
-### Option 1: npx (recommended)
+### Desktop (has browser)
 
 ```bash
 npx opencode-claude-patch
 ```
 
-Then open OpenCode and connect the Anthropic provider.
+Then open OpenCode → Connect Anthropic → "Claude Pro/Max (OAuth)" → authorize in browser.
 
-### Option 2: If you have Claude Code authenticated (fastest)
+### VPS / Headless (no browser)
 
-Skip the OAuth flow entirely by copying your existing Claude Code tokens:
+Authenticate on your local machine first, then copy your credentials to the VPS:
 
 ```bash
-npx opencode-claude-patch
-bash node_modules/opencode-claude-patch/install.sh --seed
+# On your LOCAL machine — copy credentials to VPS:
+scp ~/.claude/.credentials.json user@your-vps:~/.claude/.credentials.json
+
+# On the VPS — install patch + seed tokens in one command:
+npx opencode-claude-patch --seed
 ```
 
-This copies your active Claude Code OAuth tokens straight into OpenCode — no browser auth needed.
+This uses your Claude Pro/Max subscription — no API key needed.
 
-### Option 3: Clone and install manually
+### Alternative: API key (if you have one)
+
+```bash
+npx opencode-claude-patch --api-key sk-ant-xxxx
+# Or via env var:
+ANTHROPIC_API_KEY=sk-ant-xxxx npx opencode-claude-patch
+```
+
+### Clone and install manually
 
 ```bash
 git clone https://github.com/GukDev/OpenCode-Claude-Auth-03-2026.git
 cd OpenCode-Claude-Auth-03-2026
 bash install.sh          # Install the patch
-bash install.sh --seed   # (Optional) Copy tokens from Claude Code
+bash install.sh --seed   # Seed tokens from Claude Code credentials
 ```
 
 ## What this does
