@@ -276,9 +276,50 @@ async function refreshToken(currentAuth, client) {
   if (_refreshPromise) return _refreshPromise;
 
   _refreshPromise = (async () => {
-    // ── Strategy 1: Read from Claude Code ─────────────────────────────
+    // ── Strategy 1: Refresh via Anthropic API (standalone) ────────────
+    // Single attempt — no aggressive retries that could trigger rate limits
+    try {
+      const response = await fetch(TOKEN_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "refresh_token",
+          refresh_token: currentAuth.refresh,
+          client_id: CLIENT_ID,
+        }),
+      });
+
+      if (response.ok) {
+        const json = await response.json();
+        await client.auth.set({
+          path: { id: "anthropic" },
+          body: {
+            type: "oauth",
+            refresh: json.refresh_token,
+            access: json.access_token,
+            expires: Date.now() + json.expires_in * 1000,
+          },
+        });
+        return json.access_token;
+      }
+
+      if (response.status !== 429) {
+        console.error(
+          `[claude-patch] Token refresh failed: ${response.status}`,
+        );
+      }
+    } catch (e) {
+      console.error(`[claude-patch] Token refresh error: ${e.message}`);
+    }
+
+    // ── Strategy 2: Read from Claude Code credentials (fallback) ─────
+    // If API refresh failed (rate-limited or error), try reading tokens
+    // from Claude Code's local credentials file as a safety net.
     const ccTokens = readClaudeCodeTokens();
     if (ccTokens) {
+      console.error(
+        "[claude-patch] Using tokens from Claude Code credentials",
+      );
       await client.auth.set({
         path: { id: "anthropic" },
         body: {
@@ -291,74 +332,10 @@ async function refreshToken(currentAuth, client) {
       return ccTokens.access;
     }
 
-    // ── Strategy 2: Refresh via Anthropic API ─────────────────────────
-    const MAX_RETRIES = 5;
-    const BACKOFF_MS = [5000, 15000, 30000, 60000, 120000];
-
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const response = await fetch(TOKEN_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          grant_type: "refresh_token",
-          refresh_token: currentAuth.refresh,
-          client_id: CLIENT_ID,
-        }),
-      });
-
-      if (response.status === 429) {
-        // Before retrying the API, check Claude Code again — it may
-        // have refreshed in the meantime
-        const retryCC = readClaudeCodeTokens();
-        if (retryCC) {
-          await client.auth.set({
-            path: { id: "anthropic" },
-            body: {
-              type: "oauth",
-              refresh: retryCC.refresh,
-              access: retryCC.access,
-              expires: retryCC.expires,
-            },
-          });
-          return retryCC.access;
-        }
-
-        const retryAfter = response.headers.get("retry-after");
-        const waitMs = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
-          : BACKOFF_MS[attempt] ?? 120000;
-        console.error(
-          `[claude-patch] Token refresh rate-limited (attempt ${attempt + 1}/${MAX_RETRIES}), waiting ${waitMs / 1000}s...`,
-        );
-        await new Promise((r) => setTimeout(r, waitMs));
-        continue;
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          `Claude OAuth token refresh failed: ${response.status}. ` +
-            "Ensure Claude Code is authenticated, or disconnect & reconnect the Anthropic provider in OpenCode.",
-        );
-      }
-
-      const json = await response.json();
-      await client.auth.set({
-        path: { id: "anthropic" },
-        body: {
-          type: "oauth",
-          refresh: json.refresh_token,
-          access: json.access_token,
-          expires: Date.now() + json.expires_in * 1000,
-        },
-      });
-
-      return json.access_token;
-    }
-
+    // ── Both strategies failed ───────────────────────────────────────
     throw new Error(
       "Claude OAuth token refresh failed. " +
-        "If you have Claude Code installed, make sure it's authenticated. " +
-        "Otherwise, disconnect & reconnect the Anthropic provider in OpenCode.",
+        "Disconnect & reconnect the Anthropic provider in OpenCode to get fresh tokens.",
     );
   })();
 
