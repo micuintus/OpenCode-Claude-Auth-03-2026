@@ -60,23 +60,35 @@ echo "  Done! Claude patch installed."
 if [ "$1" = "--seed" ]; then
   echo ""
   echo "  Seeding tokens from Claude Code..."
-  CLAUDE_CREDS="$HOME/.claude/.credentials.json"
   OPENCODE_AUTH="$HOME/.local/share/opencode/auth.json"
 
-  if [ ! -f "$CLAUDE_CREDS" ]; then
-    echo "  WARNING: Claude Code credentials not found at $CLAUDE_CREDS"
-    echo "  Make sure Claude Code is installed and authenticated."
-  elif [ ! -f "$OPENCODE_AUTH" ]; then
+  if [ ! -f "$OPENCODE_AUTH" ]; then
     echo "  WARNING: OpenCode auth.json not found at $OPENCODE_AUTH"
     echo "  Run OpenCode at least once first, then re-run with --seed."
   else
     # Extract tokens from Claude Code and inject into OpenCode
     node -e "
       const fs = require('fs');
-      const cc = JSON.parse(fs.readFileSync('$CLAUDE_CREDS', 'utf8'));
+      const { execSync } = require('child_process');
+
+      let oauth = null;
+
+      // Try macOS keychain first (Claude Code 2.1.x+)
+      try {
+        const raw = execSync('security find-generic-password -s \"Claude Code-credentials\" -w', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+        oauth = JSON.parse(raw).claudeAiOauth;
+      } catch {}
+
+      // Fallback: file-based credentials
+      if (!oauth) {
+        try {
+          const cc = JSON.parse(fs.readFileSync('$HOME/.claude/.credentials.json', 'utf8'));
+          oauth = cc.claudeAiOauth;
+        } catch {}
+      }
+
+      if (!oauth || !oauth.accessToken) { console.error('  No Claude OAuth tokens found.'); process.exit(1); }
       const oc = JSON.parse(fs.readFileSync('$OPENCODE_AUTH', 'utf8'));
-      const oauth = cc.claudeAiOauth;
-      if (!oauth) { console.error('  No Claude OAuth tokens found.'); process.exit(1); }
       oc.anthropic = {
         type: 'oauth',
         refresh: oauth.refreshToken,

@@ -2,6 +2,7 @@ import { webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { execSync } from "node:child_process";
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
 
@@ -146,6 +147,23 @@ function stripToolPrefix(response) {
 let _refreshPromise = null;
 
 function readClaudeCodeTokens() {
+  // Try macOS keychain first (Claude Code 2.1.x+)
+  try {
+    const raw = execSync(
+      'security find-generic-password -s "Claude Code-credentials" -w',
+      { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] },
+    ).trim();
+    const oauth = JSON.parse(raw).claudeAiOauth;
+    if (oauth?.accessToken && oauth.expiresAt > Date.now() + 60000) {
+      return {
+        access: oauth.accessToken,
+        refresh: oauth.refreshToken,
+        expires: oauth.expiresAt,
+      };
+    }
+  } catch {}
+
+  // Fallback: file-based credentials
   try {
     const raw = readFileSync(
       join(homedir(), ".claude", ".credentials.json"),
